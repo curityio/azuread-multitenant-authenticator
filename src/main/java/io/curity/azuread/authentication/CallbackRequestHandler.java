@@ -13,16 +13,26 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package io.curity.azuread.authentication;
 
 import io.curity.azuread.config.AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig;
+import org.jose4j.jwk.HttpsJwks;
+import org.jose4j.jwt.MalformedClaimException;
+import org.jose4j.jwt.consumer.InvalidJwtException;
+import org.jose4j.jwt.consumer.JwtConsumer;
+import org.jose4j.jwt.consumer.JwtConsumerBuilder;
+import org.jose4j.keys.resolvers.HttpsJwksVerificationKeyResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.curity.identityserver.sdk.Nullable;
 import se.curity.identityserver.sdk.attribute.Attribute;
+import se.curity.identityserver.sdk.attribute.AttributeValue;
 import se.curity.identityserver.sdk.attribute.Attributes;
 import se.curity.identityserver.sdk.attribute.AuthenticationAttributes;
 import se.curity.identityserver.sdk.attribute.ContextAttributes;
+import se.curity.identityserver.sdk.attribute.ListAttributeValue;
+import se.curity.identityserver.sdk.attribute.PrimitiveAttributeValue;
 import se.curity.identityserver.sdk.attribute.SubjectAttributes;
 import se.curity.identityserver.sdk.authentication.AuthenticationResult;
 import se.curity.identityserver.sdk.authentication.AuthenticatorRequestHandler;
@@ -30,9 +40,8 @@ import se.curity.identityserver.sdk.errors.ErrorCode;
 import se.curity.identityserver.sdk.http.HttpRequest;
 import se.curity.identityserver.sdk.http.HttpResponse;
 import se.curity.identityserver.sdk.service.ExceptionFactory;
-import se.curity.identityserver.sdk.service.HttpClient;
+import org.jose4j.jwt.JwtClaims;
 import se.curity.identityserver.sdk.service.Json;
-import se.curity.identityserver.sdk.service.WebServiceClient;
 import se.curity.identityserver.sdk.service.WebServiceClientFactory;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorInformationProvider;
 import se.curity.identityserver.sdk.web.Request;
@@ -43,11 +52,16 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static io.curity.azuread.authentication.RedirectUriUtil.createRedirectUri;
 
@@ -55,11 +69,19 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
 {
     private final static Logger _logger = LoggerFactory.getLogger(CallbackRequestHandler.class);
 
+    private static final String USERINFO_ENDPOINT = "https://graph.microsoft.com/oidc/userinfo";
+    private static final String TOKEN_ENDPOINT = "https://login.microsoftonline.com/organizations/oauth2/v2.0/token";
+    private static final HttpsJwks jwks = new HttpsJwks("https://login.microsoftonline.com/organizations/discovery/v2.0/keys");
+    private static final String AUTHENTICATION_FAILED_MSG = "Authentication failed";
+    private static final Set<String> FILTERED_CLAIMS = new HashSet<>(Collections.singleton("nonce"));
+    private static final Set<String> AUTHENTICATION_CONTEXT_CLAIM_NAMES = new HashSet<>(Arrays.asList("iss", "aud",
+            "exp", "iat", "acr", "amr", "auth_time", "azp"));
     private final ExceptionFactory _exceptionFactory;
     private final AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig _config;
     private final Json _json;
     private final AuthenticatorInformationProvider _authenticatorInformationProvider;
     private final WebServiceClientFactory _webServiceClientFactory;
+    private final JwtConsumer _noIssuerVerificationJwtConsumer;
 
     public CallbackRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config)
     {
@@ -68,6 +90,13 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         _json = config.getJson();
         _webServiceClientFactory = config.getWebServiceClientFactory();
         _authenticatorInformationProvider = config.getAuthenticatorInformationProvider();
+        _noIssuerVerificationJwtConsumer = new JwtConsumerBuilder()
+                .setSkipSignatureVerification()
+                .setVerificationKeyResolver(new HttpsJwksVerificationKeyResolver(jwks))
+                .setExpectedIssuers(false)
+                .setExpectedAudience(_config.getClientId())
+                .setAllowedClockSkewInSeconds(_config.getClockSkew())
+                .build();
     }
 
     @Override
@@ -76,7 +105,8 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         if (request.isGetRequest())
         {
             return new CallbackRequestModel(request);
-        } else
+        }
+        else
         {
             throw _exceptionFactory.methodNotAllowed();
         }
@@ -95,26 +125,90 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         handleError(requestModel);
 
         Map<String, Object> tokenResponseData = redeemCodeForTokens(requestModel);
+        String accessToken = tokenResponseData.get("access_token").toString();
+        String idToken = tokenResponseData.get("id_token").toString();
 
-        List<Attribute> subjectAttributers = new ArrayList<>();
-        subjectAttributers.add(Attribute.of("id", Objects.toString(tokenResponseData.get("id"))));
-        
+        JwtClaims idTokenClaims = validateIdToken(idToken);
+        String idTokenIssuer;
+        try
+        {
+            idTokenIssuer = idTokenClaims.getIssuer();
+        }
+        catch (MalformedClaimException e)
+        {
+            throw _exceptionFactory.internalServerException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
 
-        AuthenticationAttributes attributes = AuthenticationAttributes.of(
-                SubjectAttributes.of(tokenResponseData.get("id").toString(), Attributes.of(subjectAttributers)),
-                ContextAttributes.of(Attributes.of(Attribute.of("access_token", tokenResponseData.get("access_token").toString()))));
-        AuthenticationResult authenticationResult = new AuthenticationResult(attributes);
-        return Optional.ofNullable(authenticationResult);
+        //todo call external API instead of relying on statically configured allowed Tenant IDs
+        if (!_config.getAllowedTenantIds().contains(idTokenIssuer))
+        {
+            throw _exceptionFactory.forbiddenException(ErrorCode.AUTHENTICATION_FAILED, AUTHENTICATION_FAILED_MSG);
+        }
+
+        JwtClaims userinfoClaims = null;
+        if (_config.fetchUserInfo())
+        {
+            userinfoClaims = callUserInfo(accessToken);
+        }
+
+        AuthenticationAttributes authenticationAttributes = authenticationAttributesFromClaims(idTokenClaims,
+                userinfoClaims).withContextAttribute(Attribute.of("op_access_token", accessToken));
+
+        return Optional.of(new AuthenticationResult(authenticationAttributes));
+    }
+
+    private JwtClaims validateIdToken(String idToken)
+    {
+        try
+        {
+            return _noIssuerVerificationJwtConsumer.processToClaims(idToken);
+        }
+        catch (InvalidJwtException e)
+        {
+            if (_logger.isDebugEnabled())
+            {
+                _logger.debug("Could not verify Id token: {}", e.getOriginalMessage());
+            }
+
+            throw _exceptionFactory.forbiddenException(ErrorCode.AUTHENTICATION_FAILED, AUTHENTICATION_FAILED_MSG);
+        }
+    }
+
+    private JwtClaims callUserInfo(String accessToken)
+    {
+        HttpResponse userInfoResponse = _webServiceClientFactory.create(URI.create(USERINFO_ENDPOINT))
+                .request()
+                .header("Authorization", "Bearer " + accessToken)
+                .method("GET")
+                .response();
+
+        int statusCode = userInfoResponse.statusCode();
+        if (statusCode != 200)
+        {
+            if (_logger.isInfoEnabled())
+            {
+                _logger.info("Got error response from userinfo endpoint: error = {}, {}", statusCode,
+                        userInfoResponse.body(HttpResponse.asString()));
+            }
+
+            throw _exceptionFactory.internalServerException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
+        try
+        {
+            return JwtClaims.parse(userInfoResponse.body(HttpResponse.asString()));
+        }
+        catch (InvalidJwtException e)
+        {
+            throw _exceptionFactory.internalServerException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
     }
 
     private Map<String, Object> redeemCodeForTokens(CallbackRequestModel requestModel)
     {
         String redirectUri = createRedirectUri(_authenticatorInformationProvider, _exceptionFactory);
 
-        HttpResponse tokenResponse = getWebServiceClient()
-                .withPath("/oauth/v2/accessToken")
-                .request()
-                .contentType("application/x-www-form-urlencoded")
+        HttpResponse tokenResponse = _webServiceClientFactory.create(URI.create(TOKEN_ENDPOINT))
+                .request().contentType("application/x-www-form-urlencoded")
                 .body(getFormEncodedBodyFrom(createPostData(_config.getClientId(), _config.getClientSecret(),
                         requestModel.getCode(), redirectUri)))
                 .method("POST")
@@ -135,19 +229,6 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         return _json.fromJson(tokenResponse.body(HttpResponse.asString()));
     }
 
-    private WebServiceClient getWebServiceClient()
-    {
-        Optional<HttpClient> httpClient = _config.getHttpClient();
-
-        if (httpClient.isPresent())
-        {
-            return _webServiceClientFactory.create(httpClient.get()).withHost("host.server.com");
-        } else
-        {
-            return _webServiceClientFactory.create(URI.create("https://host.server.com"));
-        }
-    }
-
     private void handleError(CallbackRequestModel requestModel)
     {
         if (!Objects.isNull(requestModel.getError()))
@@ -156,8 +237,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
             {
                 _logger.debug("Got an error from AzureAdMultitenantAuthenticator: {} - {}", requestModel.getError(), requestModel.getErrorDescription());
 
-                throw _exceptionFactory.redirectException(
-                        _authenticatorInformationProvider.getAuthenticationBaseUri().toASCIIString());
+                throw _exceptionFactory.redirectException(_authenticatorInformationProvider.getAuthenticationBaseUri().toASCIIString());
             }
 
             _logger.warn("Got an error from AzureAdMultitenantAuthenticator: {} - {}", requestModel.getError(), requestModel.getErrorDescription());
@@ -185,7 +265,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
 
         data.entrySet().forEach(e -> appendParameter(stringBuilder, e));
 
-        return HttpRequest.fromString(stringBuilder.toString());
+        return HttpRequest.fromString(stringBuilder.toString(), StandardCharsets.UTF_8);
     }
 
     private static void appendParameter(StringBuilder stringBuilder, Map.Entry<String, String> entry)
@@ -209,7 +289,8 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         try
         {
             return URLEncoder.encode(unencodedString, StandardCharsets.UTF_8.name());
-        } catch (UnsupportedEncodingException e)
+        }
+        catch (UnsupportedEncodingException e)
         {
             throw new RuntimeException("This server cannot support UTF-8!", e);
         }
@@ -222,11 +303,116 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         if (sessionAttribute != null && state.equals(sessionAttribute.getValueOfType(String.class)))
         {
             _logger.debug("State matches session");
-        } else
+        }
+        else
         {
             _logger.debug("State did not match session");
 
             throw _exceptionFactory.badRequestException(ErrorCode.INVALID_SERVER_STATE, "Bad state provided");
         }
+    }
+
+    private AuthenticationAttributes authenticationAttributesFromClaims(JwtClaims idTokenClaims,
+                                                                        @Nullable JwtClaims userinfoClaims)
+    {
+        List<Attribute> subjectAttributeList = new ArrayList<>();
+        List<Attribute> contextAttributeList = new ArrayList<>();
+
+        filterClaimsSet(idTokenClaims, subjectAttributeList, contextAttributeList);
+        String subject = getSubject(idTokenClaims);
+        if (userinfoClaims != null)
+        {
+            filterClaimsSet(userinfoClaims, subjectAttributeList, contextAttributeList);
+            // Overwrite subject if returned from the userinfo. IdToken sub will be in subject attributes.
+            subject = getSubject(userinfoClaims);
+        }
+
+        return AuthenticationAttributes.of(
+                SubjectAttributes.of(subject, Attributes.of(subjectAttributeList)),
+                ContextAttributes.of(Attributes.of(contextAttributeList), true));
+    }
+
+    private static void filterClaimsSet(JwtClaims idTokenClaims, List<Attribute> subjectAttributeList,
+                                        List<Attribute> contextAttributeList)
+    {
+        for (Map.Entry<String, List<Object>> claim : idTokenClaims.flattenClaims(FILTERED_CLAIMS).entrySet())
+        {
+            @Nullable Attribute attribute = fromClaim(claim.getKey(), claim.getValue());
+
+            if (attribute != null)
+            {
+                if (AUTHENTICATION_CONTEXT_CLAIM_NAMES.contains(claim.getKey()))
+                {
+                    contextAttributeList.add(attribute);
+                }
+                else
+                {
+                    subjectAttributeList.add(attribute);
+                }
+            }
+        }
+    }
+
+    private String getSubject(JwtClaims claims)
+    {
+        String subject;
+
+        try
+        {
+            subject = claims.getSubject();
+        }
+        catch (MalformedClaimException e)
+        {
+            if (_logger.isInfoEnabled())
+            {
+                _logger.info("Could not extract subject from id_token: {}", e.getMessage());
+            }
+
+            throw _exceptionFactory.forbiddenException(ErrorCode.AUTHENTICATION_FAILED, AUTHENTICATION_FAILED_MSG);
+        }
+
+        return subject;
+    }
+
+    @Nullable
+    private static Attribute fromClaim(String key, List<Object> claimValue)
+    {
+        @Nullable Attribute attribute;
+
+        if (claimValue.isEmpty())
+        {
+            _logger.trace("The claim {} was received without any value, adding as flag", key);
+
+            attribute = Attribute.ofFlag(key);
+        }
+        else if (claimValue.size() == 1)
+        {
+            Object value = claimValue.get(0);
+            if (value instanceof Comparable<?>)
+            {
+                attribute = Attribute.of(key, PrimitiveAttributeValue.of((Comparable<?>) value));
+            }
+            else
+            {
+                if (_logger.isDebugEnabled())
+                {
+                    _logger.debug("The claim {} has an incompatible type: {}", key, value.getClass().getCanonicalName());
+                }
+
+                attribute = null;
+            }
+        }
+        else // claimValue.size() > 1
+        {
+            // Writing this using streams hits an issue with typing from Object; for loop doesn't have that.
+            List<AttributeValue> attributeValues = claimValue.stream()
+                    .filter(it -> it instanceof Comparable)
+                    .map(it -> PrimitiveAttributeValue.of((Comparable<?>) it))
+                    .collect(Collectors.toList());
+
+            attribute = Attribute.of(key, ListAttributeValue.of(attributeValues));
+        }
+
+        return attribute;
     }
 }

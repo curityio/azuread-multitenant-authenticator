@@ -13,6 +13,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package io.curity.azuread.authentication;
 
 import se.curity.identityserver.sdk.Nullable;
@@ -24,11 +25,8 @@ class CallbackRequestModel
 {
     @Nullable
     private final String _error;
-
     @Nullable
     private final String _errorDescription;
-
-    private final String _url;
     private final String _code;
     private final String _state;
 
@@ -41,7 +39,6 @@ class CallbackRequestModel
         _state = request.getQueryParameterValueOrError("state", invalidParameter);
         _error = request.getQueryParameterValueOrError("error", invalidParameter);
         _errorDescription = request.getQueryParameterValueOrError("error_description", invalidParameter);
-        _url = request.getUrl();
     }
 
     public String getCode()
@@ -58,11 +55,6 @@ class CallbackRequestModel
     public String getErrorDescription()
     {
         return _errorDescription;
-    }
-
-    public String getRequestUrl()
-    {
-        return _url;
     }
 
     @Nullable

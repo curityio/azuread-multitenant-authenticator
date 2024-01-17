@@ -13,6 +13,7 @@ repositories {
 
 dependencies {
     compileOnly 'se.curity.identityserver:identityserver.sdk:8.7.0'
+    implementation 'org.bitbucket.b_c:jose4j:0.9.3'
     compileOnly 'org.slf4j:slf4j-api:1.7.36'
 }
 

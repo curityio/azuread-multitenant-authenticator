@@ -13,6 +13,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package io.curity.azuread.descriptor;
 
 import io.curity.azuread.authentication.CallbackRequestHandler;
@@ -25,7 +26,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public final class AzureAdMultitenantAuthenticatorAuthenticatorPluginDescriptor implements AuthenticatorPluginDescriptor<AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig>
+public final class AzureAdMultitenantAuthenticatorAuthenticatorPluginDescriptor
+        implements AuthenticatorPluginDescriptor<AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig>
 {
     public final static String CALLBACK = "callback";
 

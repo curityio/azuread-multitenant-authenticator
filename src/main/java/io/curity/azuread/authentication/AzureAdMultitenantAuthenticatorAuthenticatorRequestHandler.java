@@ -13,31 +13,28 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package io.curity.azuread.authentication;
 
 import io.curity.azuread.config.AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.curity.identityserver.sdk.attribute.Attribute;
+import se.curity.identityserver.sdk.authentication.AuthenticatedState;
 import se.curity.identityserver.sdk.authentication.AuthenticationResult;
 import se.curity.identityserver.sdk.authentication.AuthenticatorRequestHandler;
-import se.curity.identityserver.sdk.errors.ErrorCode;
 import se.curity.identityserver.sdk.http.RedirectStatusCode;
 import se.curity.identityserver.sdk.service.ExceptionFactory;
+import se.curity.identityserver.sdk.service.authentication.AuthenticationRequirements;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorInformationProvider;
 import se.curity.identityserver.sdk.web.Request;
 import se.curity.identityserver.sdk.web.Response;
 
-import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URL;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static io.curity.azuread.authentication.RedirectUriUtil.createRedirectUri;
@@ -45,17 +42,22 @@ import static io.curity.azuread.authentication.RedirectUriUtil.createRedirectUri
 public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler implements AuthenticatorRequestHandler<Request>
 {
     private static final Logger _logger = LoggerFactory.getLogger(AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler.class);
-    private static final String AUTHORIZATION_ENDPOINT = "";
-
+    private static final String AUTHORIZATION_ENDPOINT = "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize";
     private final AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig _config;
     private final AuthenticatorInformationProvider _authenticatorInformationProvider;
     private final ExceptionFactory _exceptionFactory;
+    private final AuthenticatedState _authenticatedState;
+    private final AuthenticationRequirements _authenticationRequirements;
 
-    public AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config)
+    public AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config,
+                                                                      AuthenticatedState authenticatedState,
+                                                                      AuthenticationRequirements authenticationRequirements)
     {
         _config = config;
         _exceptionFactory = config.getExceptionFactory();
         _authenticatorInformationProvider = config.getAuthenticatorInformationProvider();
+        _authenticatedState = authenticatedState;
+        _authenticationRequirements = authenticationRequirements;
     }
 
     @Override
@@ -66,16 +68,39 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler im
         String redirectUri = createRedirectUri(_authenticatorInformationProvider, _exceptionFactory);
         String state = UUID.randomUUID().toString();
         Map<String, Collection<String>> queryStringArguments = new LinkedHashMap<>(5);
-        Set<String> scopes = new LinkedHashSet<>(7);
+
+        if (_authenticatedState.isAuthenticated() &&
+                _config.useSubjectForLoginHint())
+        {
+            queryStringArguments.put("login_hint", Collections.singleton(_authenticatedState.getUsername()));
+        }
+
+        boolean forceAuthentication = switch (_config.getPromptLogin())
+        {
+            case ALWAYS -> true;
+            case IF_REQUESTED -> _authenticationRequirements.shouldForceAuthentication();
+            case NEVER -> false;
+        };
+
+        if (forceAuthentication)
+        {
+            queryStringArguments.put("prompt", Collections.singleton("login"));
+        }
+
+        if (_authenticationRequirements.getMaximumAuthenticationAge().isPresent())
+        {
+            queryStringArguments.put("max_age", Collections.singleton(_authenticationRequirements
+                    .getMaximumAuthenticationAge().get().toString()));
+        }
+
+        _config.getAcr().ifPresent(acr -> queryStringArguments.put("acr_values", Collections.singleton(acr)));
 
         _config.getSessionManager().put(Attribute.of("state", state));
-
         queryStringArguments.put("client_id", Collections.singleton(_config.getClientId()));
         queryStringArguments.put("redirect_uri", Collections.singleton(redirectUri));
         queryStringArguments.put("state", Collections.singleton(state));
         queryStringArguments.put("response_type", Collections.singleton("code"));
-
-        queryStringArguments.put("scope", Collections.singleton(String.join(" ", scopes)));
+        queryStringArguments.put("scope", Collections.singleton(_config.getScope()));
 
         _logger.debug("Redirecting to {} with query string arguments {}", AUTHORIZATION_ENDPOINT,
                 queryStringArguments);

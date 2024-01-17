@@ -13,6 +13,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package io.curity.azuread.authentication;
 
 import se.curity.identityserver.sdk.errors.ErrorCode;
@@ -27,7 +28,9 @@ import static io.curity.azuread.descriptor.AzureAdMultitenantAuthenticatorAuthen
 
 final class RedirectUriUtil
 {
-    private RedirectUriUtil() { }
+    private RedirectUriUtil()
+    {
+    }
 
     static String createRedirectUri(AuthenticatorInformationProvider authenticatorInformationProvider,
                                     ExceptionFactory exceptionFactory)

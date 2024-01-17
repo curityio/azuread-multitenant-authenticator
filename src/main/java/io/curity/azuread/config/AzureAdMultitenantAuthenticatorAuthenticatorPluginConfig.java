@@ -13,31 +13,68 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 package io.curity.azuread.config;
 
 import se.curity.identityserver.sdk.config.Configuration;
-import se.curity.identityserver.sdk.config.annotation.Description;
+import se.curity.identityserver.sdk.config.annotation.*;
 import se.curity.identityserver.sdk.service.ExceptionFactory;
-import se.curity.identityserver.sdk.service.HttpClient;
 import se.curity.identityserver.sdk.service.Json;
 import se.curity.identityserver.sdk.service.SessionManager;
 import se.curity.identityserver.sdk.service.WebServiceClientFactory;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorInformationProvider;
 
+import java.util.List;
 import java.util.Optional;
 
 @SuppressWarnings("InterfaceNeverImplemented")
 public interface AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig extends Configuration
 {
-	@Description("Client id")
+    @Description("The client-id, registered at the OpenID server")
     String getClientId();
-    @Description("Secret key")
+
+    @Description("The client-secret (client-secret-post), registered at the OpenID server")
     String getClientSecret();
-    @Description("The HTTP client with any proxy and TLS settings that will be used to connect to the provider")
-    Optional<HttpClient> getHttpClient();
+
+    @DefaultBoolean(false)
+    @Description("Fetch claims from the userinfo endpoint")
+    Boolean fetchUserInfo();
+
+    @DefaultBoolean(false)
+    @Description("If there is a previously authenticated subject, pass the subject as login_hint to the OpenID Server.")
+    Boolean useSubjectForLoginHint();
+
+    @DefaultEnum("NEVER")
+    PromptLogin getPromptLogin();
+
+    enum PromptLogin
+    {
+        ALWAYS, IF_REQUESTED, NEVER
+    }
+
+    @Description("The Authentication Context Class Reference (ACR) or authentication method that should be sent in the request to the OpenID Server")
+    @Name("authentication-context-class-reference")
+    Optional<String> getAcr();
+
+    @DefaultString("openid")
+    @Description("Scope to ask the OpenID server for, space separated")
+    String getScope();
+
+    @DefaultInteger(60)
+    @Description("The allowed clock-skew in seconds when validating the JWT from the OpenID Server")
+    Integer getClockSkew();
+
     SessionManager getSessionManager();
+
     ExceptionFactory getExceptionFactory();
+
     AuthenticatorInformationProvider getAuthenticatorInformationProvider();
+
     WebServiceClientFactory getWebServiceClientFactory();
+
+    @Description("List of Tenant IDs that the users are allowed to authenticate with. " +
+            "To be replaced with a call to an external API")
+    List<String> getAllowedTenantIds();
+
     Json getJson();
 }
