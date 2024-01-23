@@ -132,18 +132,17 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         String idToken = tokenResponseData.get("id_token").toString();
 
         JwtClaims idTokenClaims = validateIdToken(idToken);
-        String idTokenIssuer;
-        try
+
+        @Nullable String idTokenIssuer = idTokenClaims.getClaimValueAsString("iss");
+        @Nullable String tenantId = idTokenClaims.getClaimValueAsString("tid");
+
+        if (!idTokenIssuer.contains(tenantId))
         {
-            idTokenIssuer = idTokenClaims.getIssuer();
-        }
-        catch (MalformedClaimException e)
-        {
-            throw _exceptionFactory.internalServerException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+            _logger.warn("ID token issuer `{}` doesn't contain the `tid` `{}` ", idTokenIssuer, tenantId);
         }
 
         //todo call external API instead of relying on statically configured allowed Tenant IDs
-        if (!_config.getAllowedTenantIds().contains(idTokenIssuer))
+        if (!_config.getAllowedTenantIds().contains(tenantId))
         {
             response.addErrorMessage(ErrorMessage.withMessage("tenant.disallowed"));
             response.setResponseModel(templateResponseModel(Collections.singletonMap("_restartUrl",
