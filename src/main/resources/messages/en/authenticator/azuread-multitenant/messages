@@ -1,0 +1,5 @@
+error.meta.title=Login
+error.view.error.authentication=Login
+error.view.retry=Try a different account
+error.tenant.disallowed=The account you selected cannot be accepted
+error.view.return-to-login=Return to login

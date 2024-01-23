@@ -19,6 +19,7 @@ package io.curity.azuread.authentication;
 import io.curity.azuread.config.AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.curity.identityserver.sdk.Nullable;
 import se.curity.identityserver.sdk.attribute.Attribute;
 import se.curity.identityserver.sdk.authentication.AuthenticatedState;
 import se.curity.identityserver.sdk.authentication.AuthenticationResult;
@@ -39,7 +40,8 @@ import java.util.UUID;
 
 import static io.curity.azuread.authentication.RedirectUriUtil.createRedirectUri;
 
-public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler implements AuthenticatorRequestHandler<Request>
+public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler
+        implements AuthenticatorRequestHandler<AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler.RequestModel>
 {
     private static final Logger _logger = LoggerFactory.getLogger(AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler.class);
     private static final String AUTHORIZATION_ENDPOINT = "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize";
@@ -61,7 +63,7 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler im
     }
 
     @Override
-    public Optional<AuthenticationResult> get(Request request, Response response)
+    public Optional<AuthenticationResult> get(RequestModel request, Response response)
     {
         _logger.debug("GET request received for authentication");
 
@@ -82,7 +84,7 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler im
             case NEVER -> false;
         };
 
-        if (forceAuthentication)
+        if (forceAuthentication || request.getModel().withRetry())
         {
             queryStringArguments.put("prompt", Collections.singleton("login"));
         }
@@ -110,14 +112,44 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler im
     }
 
     @Override
-    public Optional<AuthenticationResult> post(Request request, Response response)
+    public Optional<AuthenticationResult> post(RequestModel request, Response response)
     {
         throw _exceptionFactory.methodNotAllowed();
     }
 
     @Override
-    public Request preProcess(Request request, Response response)
+    public RequestModel preProcess(Request request, Response response)
     {
-        return request;
+        return new RequestModel(request);
+    }
+
+    public static final class RequestModel
+    {
+        private final Get _getRequestModel;
+
+        public RequestModel(Request request)
+        {
+            _getRequestModel = request.isGetRequest() ? new Get(request) : null;
+        }
+
+        Get getModel()
+        {
+            return _getRequestModel;
+        }
+
+        private static final class Get
+        {
+            private final boolean _retry;
+
+            public Get(Request request)
+            {
+                _retry = request.getQueryParameterNames().contains("retry");
+            }
+
+            boolean withRetry()
+            {
+                return _retry;
+            }
+        }
     }
 }

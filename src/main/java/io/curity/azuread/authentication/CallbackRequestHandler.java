@@ -46,6 +46,7 @@ import se.curity.identityserver.sdk.service.WebServiceClientFactory;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorInformationProvider;
 import se.curity.identityserver.sdk.web.Request;
 import se.curity.identityserver.sdk.web.Response;
+import se.curity.identityserver.sdk.web.alerts.ErrorMessage;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
@@ -64,6 +65,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static io.curity.azuread.authentication.RedirectUriUtil.createRedirectUri;
+import static se.curity.identityserver.sdk.web.Response.ResponseModelScope.FAILURE;
+import static se.curity.identityserver.sdk.web.ResponseModel.templateResponseModel;
 
 public final class CallbackRequestHandler implements AuthenticatorRequestHandler<CallbackRequestModel>
 {
@@ -142,7 +145,11 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         //todo call external API instead of relying on statically configured allowed Tenant IDs
         if (!_config.getAllowedTenantIds().contains(idTokenIssuer))
         {
-            throw _exceptionFactory.forbiddenException(ErrorCode.AUTHENTICATION_FAILED, AUTHENTICATION_FAILED_MSG);
+            response.addErrorMessage(ErrorMessage.withMessage("tenant.disallowed"));
+            response.setResponseModel(templateResponseModel(Collections.singletonMap("_restartUrl",
+                            _authenticatorInformationProvider.getAuthenticationBaseUri()), "error/get"),
+                    FAILURE);
+            return Optional.empty();
         }
 
         JwtClaims userinfoClaims = null;

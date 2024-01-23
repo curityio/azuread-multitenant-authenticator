@@ -1,0 +1,16 @@
+#set ($page_symbol = $page_symbol_error_generic)
+#define($_body)
+<div class="area center">
+    <h1>#message("${_templatePrefix}.view.error.authentication")</h1>
+    #parse("fragments/auto-login")
+    <div class="center">
+        <a href="$_authUrl?retry" class="button button-fullwidth button-primary">#message("${_templatePrefix}.view.retry")</a>
+    </div>
+    <div class="center py2 login-actions">
+        <a href="$_restartUrl">
+            <i class="icon ion-android-arrow-back inlineicon"></i>#message("${_templatePrefix}.view.return-to-login")
+        </a>
+    </div>
+</div>
+#end
+#parse("layouts/default")
