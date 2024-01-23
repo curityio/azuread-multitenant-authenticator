@@ -43,6 +43,7 @@ import se.curity.identityserver.sdk.service.ExceptionFactory;
 import org.jose4j.jwt.JwtClaims;
 import se.curity.identityserver.sdk.service.Json;
 import se.curity.identityserver.sdk.service.WebServiceClientFactory;
+import se.curity.identityserver.sdk.service.authentication.AuthenticatorExceptionFactory;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorInformationProvider;
 import se.curity.identityserver.sdk.web.Request;
 import se.curity.identityserver.sdk.web.Response;
@@ -79,7 +80,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
     private static final Set<String> FILTERED_CLAIMS = new HashSet<>(Collections.singleton("nonce"));
     private static final Set<String> AUTHENTICATION_CONTEXT_CLAIM_NAMES = new HashSet<>(Arrays.asList("iss", "aud",
             "exp", "iat", "acr", "amr", "auth_time", "azp"));
-    private final ExceptionFactory _exceptionFactory;
+    private final AuthenticatorExceptionFactory _exceptionFactory;
     private final AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig _config;
     private final Json _json;
     private final AuthenticatorInformationProvider _authenticatorInformationProvider;
@@ -171,11 +172,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         }
         catch (InvalidJwtException e)
         {
-            if (_logger.isDebugEnabled())
-            {
-                _logger.debug("Could not verify Id token: {}", e.getOriginalMessage());
-            }
-
+            _logger.warn("Could not verify Id token: {}", e.getOriginalMessage());
             throw _exceptionFactory.forbiddenException(ErrorCode.AUTHENTICATION_FAILED, AUTHENTICATION_FAILED_MSG);
         }
     }
@@ -191,13 +188,9 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         int statusCode = userInfoResponse.statusCode();
         if (statusCode != 200)
         {
-            if (_logger.isInfoEnabled())
-            {
-                _logger.info("Got error response from userinfo endpoint: error = {}, {}", statusCode,
-                        userInfoResponse.body(HttpResponse.asString()));
-            }
-
-            throw _exceptionFactory.internalServerException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+            _logger.warn("Got error response from userinfo endpoint: error = {}, {}", statusCode,
+                    userInfoResponse.body(HttpResponse.asString()));
+            throw _exceptionFactory.internalServerException(ErrorCode.GENERIC_ERROR);
         }
         try
         {
@@ -205,7 +198,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         }
         catch (InvalidJwtException e)
         {
-            throw _exceptionFactory.internalServerException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+            throw _exceptionFactory.internalServerException(ErrorCode.GENERIC_ERROR, e.getMessage());
         }
     }
 
@@ -223,12 +216,9 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
 
         if (statusCode != 200)
         {
-            if (_logger.isInfoEnabled())
-            {
-                _logger.info("Got error response from token endpoint: error = {}, {}", statusCode,
-                        tokenResponse.body(HttpResponse.asString()));
-            }
 
+            _logger.warn("Got error response from token endpoint: error = {}, {}", statusCode,
+                    tokenResponse.body(HttpResponse.asString()));
             throw _exceptionFactory.internalServerException(ErrorCode.EXTERNAL_SERVICE_ERROR);
         }
 
@@ -243,12 +233,12 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
             {
                 _logger.debug("Got an error from AzureAdMultitenantAuthenticator: {} - {}", requestModel.getError(), requestModel.getErrorDescription());
 
-                throw _exceptionFactory.redirectException(_authenticatorInformationProvider.getAuthenticationBaseUri().toASCIIString());
+                throw _exceptionFactory.authenticationFailedException("User authentication denied");
             }
 
             _logger.warn("Got an error from AzureAdMultitenantAuthenticator: {} - {}", requestModel.getError(), requestModel.getErrorDescription());
 
-            throw _exceptionFactory.externalServiceException("Login with AzureAdMultitenantAuthenticator failed");
+            throw _exceptionFactory.authenticationFailedException("User authentication failed");
         }
     }
 
@@ -308,13 +298,13 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
 
         if (sessionAttribute != null && state.equals(sessionAttribute.getValueOfType(String.class)))
         {
-            _logger.debug("State matches session");
+            _logger.trace("State matches session");
         }
         else
         {
             _logger.debug("State did not match session");
 
-            throw _exceptionFactory.badRequestException(ErrorCode.INVALID_SERVER_STATE, "Bad state provided");
+            throw _exceptionFactory.authenticationFailedException("Bad state provided");
         }
     }
 
@@ -369,12 +359,8 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         }
         catch (MalformedClaimException e)
         {
-            if (_logger.isInfoEnabled())
-            {
-                _logger.info("Could not extract subject from id_token: {}", e.getMessage());
-            }
-
-            throw _exceptionFactory.forbiddenException(ErrorCode.AUTHENTICATION_FAILED, AUTHENTICATION_FAILED_MSG);
+            _logger.warn("Could not extract subject from id_token: {}", e.getMessage());
+            throw _exceptionFactory.authenticationFailedException("Could not extract subject");
         }
 
         return subject;

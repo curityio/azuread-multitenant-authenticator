@@ -18,10 +18,10 @@ package io.curity.azuread.config;
 
 import se.curity.identityserver.sdk.config.Configuration;
 import se.curity.identityserver.sdk.config.annotation.*;
-import se.curity.identityserver.sdk.service.ExceptionFactory;
 import se.curity.identityserver.sdk.service.Json;
 import se.curity.identityserver.sdk.service.SessionManager;
 import se.curity.identityserver.sdk.service.WebServiceClientFactory;
+import se.curity.identityserver.sdk.service.authentication.AuthenticatorExceptionFactory;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorInformationProvider;
 
 import java.util.List;
@@ -66,7 +66,7 @@ public interface AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig extend
 
     SessionManager getSessionManager();
 
-    ExceptionFactory getExceptionFactory();
+    AuthenticatorExceptionFactory getExceptionFactory();
 
     AuthenticatorInformationProvider getAuthenticatorInformationProvider();
 
