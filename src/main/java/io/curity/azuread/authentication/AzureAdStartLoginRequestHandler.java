@@ -47,10 +47,10 @@ import static java.nio.charset.StandardCharsets.US_ASCII;
 import static org.jose4j.lang.HashUtil.SHA_256;
 import static org.jose4j.lang.HashUtil.getMessageDigest;
 
-public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler
-        implements AuthenticatorRequestHandler<AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler.RequestModel>
+public final class AzureAdStartLoginRequestHandler
+        implements AuthenticatorRequestHandler<AzureAdStartLoginRequestHandler.RequestModel>
 {
-    private static final Logger _logger = LoggerFactory.getLogger(AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler.class);
+    private static final Logger _logger = LoggerFactory.getLogger(AzureAdStartLoginRequestHandler.class);
     private static final String AUTHORIZATION_ENDPOINT = "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize";
     private final AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig _config;
     private final AuthenticatorInformationProvider _authenticatorInformationProvider;
@@ -59,9 +59,9 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler
     private final AuthenticationRequirements _authenticationRequirements;
     private final SessionManager _sessionManager;
 
-    public AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config,
-                                                                      AuthenticatedState authenticatedState,
-                                                                      AuthenticationRequirements authenticationRequirements)
+    public AzureAdStartLoginRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config,
+                                           AuthenticatedState authenticatedState,
+                                           AuthenticationRequirements authenticationRequirements)
     {
         _config = config;
         _exceptionFactory = config.getExceptionFactory();
@@ -78,9 +78,12 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler
 
         String redirectUri = createRedirectUri(_authenticatorInformationProvider, _exceptionFactory);
         String state = UUID.randomUUID().toString();
+        String nonce = UUID.randomUUID().toString();
         String codeVerifier = generateCodeVerifier();
         String codeChallenge = challengeFromVerifier(codeVerifier);
         _sessionManager.put(Attribute.of("code_verifier", codeVerifier));
+        _sessionManager.put(Attribute.of("nonce", nonce));
+        _config.getSessionManager().put(Attribute.of("state", state));
 
         Map<String, Collection<String>> queryStringArguments = new LinkedHashMap<>(5);
 
@@ -108,16 +111,16 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler
                     .getMaximumAuthenticationAge().get().toString()));
         }
 
-        _config.getAcr().ifPresent(acr -> queryStringArguments.put("acr_values", Collections.singleton(acr)));
+        String extraScopes =_config.getScope().isPresent() ? " " + _config.getScope().get() : "";
 
-        _config.getSessionManager().put(Attribute.of("state", state));
         queryStringArguments.put("client_id", Collections.singleton(_config.getClientId()));
         queryStringArguments.put("redirect_uri", Collections.singleton(redirectUri));
         queryStringArguments.put("state", Collections.singleton(state));
         queryStringArguments.put("code_challenge", Collections.singleton(codeChallenge));
         queryStringArguments.put("code_challenge_method", Collections.singleton("S256"));
         queryStringArguments.put("response_type", Collections.singleton("code"));
-        queryStringArguments.put("scope", Collections.singleton(_config.getScope()));
+        queryStringArguments.put("scope", Collections.singleton("openid" + extraScopes));
+        queryStringArguments.put("nonce", Collections.singleton(nonce));
 
         _logger.debug("Redirecting to {} with query string arguments {}", AUTHORIZATION_ENDPOINT,
                 queryStringArguments);

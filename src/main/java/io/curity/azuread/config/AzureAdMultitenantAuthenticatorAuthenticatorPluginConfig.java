@@ -52,13 +52,8 @@ public interface AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig extend
         ALWAYS, IF_REQUESTED, NEVER
     }
 
-    @Description("The Authentication Context Class Reference (ACR) or authentication method that should be sent in the request to the OpenID Server")
-    @Name("authentication-context-class-reference")
-    Optional<String> getAcr();
-
-    @DefaultString("openid")
-    @Description("Scope to ask the OpenID server for, space separated")
-    String getScope();
+    @Description("Scope to ask the OpenID server for, space separated. openid scope is always included in the request")
+    Optional<String> getScope();
 
     @DefaultInteger(60)
     @Description("The allowed clock-skew in seconds when validating the JWT from the OpenID Server")

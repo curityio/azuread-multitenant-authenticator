@@ -69,9 +69,9 @@ import static io.curity.azuread.authentication.RedirectUriUtil.createRedirectUri
 import static se.curity.identityserver.sdk.web.Response.ResponseModelScope.FAILURE;
 import static se.curity.identityserver.sdk.web.ResponseModel.templateResponseModel;
 
-public final class CallbackRequestHandler implements AuthenticatorRequestHandler<CallbackRequestModel>
+public final class AzureAdCallbackRequestHandler implements AuthenticatorRequestHandler<CallbackRequestModel>
 {
-    private final static Logger _logger = LoggerFactory.getLogger(CallbackRequestHandler.class);
+    private final static Logger _logger = LoggerFactory.getLogger(AzureAdCallbackRequestHandler.class);
 
     private static final String USERINFO_ENDPOINT = "https://graph.microsoft.com/oidc/userinfo";
     private static final String TOKEN_ENDPOINT = "https://login.microsoftonline.com/organizations/oauth2/v2.0/token";
@@ -88,7 +88,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
     private final JwtConsumer _noIssuerVerificationJwtConsumer;
     private final SessionManager _sessionManager;
 
-    public CallbackRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config)
+    public AzureAdCallbackRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config)
     {
         _exceptionFactory = config.getExceptionFactory();
         _config = config;
@@ -138,6 +138,15 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
 
         @Nullable String idTokenIssuer = idTokenClaims.getClaimValueAsString("iss");
         @Nullable String tenantId = idTokenClaims.getClaimValueAsString("tid");
+        @Nullable String nonce = idTokenClaims.getClaimValueAsString("nonce");
+        String expectedNonce  = _sessionManager.get("nonce").getValueOfType(String.class);
+        _sessionManager.remove("nonce");
+
+        if (nonce == null || !nonce.equals(expectedNonce))
+        {
+            _logger.info("Could not verify nonce, expected {} and got {}", nonce, expectedNonce);
+            throw _exceptionFactory.forbiddenException(ErrorCode.AUTHENTICATION_FAILED, AUTHENTICATION_FAILED_MSG);
+        }
 
         if (!idTokenIssuer.contains(tenantId))
         {

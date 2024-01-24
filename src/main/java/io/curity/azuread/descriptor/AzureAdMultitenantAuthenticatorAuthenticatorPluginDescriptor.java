@@ -16,8 +16,8 @@
 
 package io.curity.azuread.descriptor;
 
-import io.curity.azuread.authentication.CallbackRequestHandler;
-import io.curity.azuread.authentication.AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler;
+import io.curity.azuread.authentication.AzureAdCallbackRequestHandler;
+import io.curity.azuread.authentication.AzureAdStartLoginRequestHandler;
 import io.curity.azuread.config.AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig;
 import se.curity.identityserver.sdk.authentication.AuthenticatorRequestHandler;
 import se.curity.identityserver.sdk.plugin.descriptor.AuthenticatorPluginDescriptor;
@@ -47,8 +47,8 @@ public final class AzureAdMultitenantAuthenticatorAuthenticatorPluginDescriptor
     public Map<String, Class<? extends AuthenticatorRequestHandler<?>>> getAuthenticationRequestHandlerTypes()
     {
         Map<String, Class<? extends AuthenticatorRequestHandler<?>>> handlers = new LinkedHashMap<>(2);
-        handlers.put("index", AzureAdMultitenantAuthenticatorAuthenticatorRequestHandler.class);
-        handlers.put(CALLBACK, CallbackRequestHandler.class);
+        handlers.put("index", AzureAdStartLoginRequestHandler.class);
+        handlers.put(CALLBACK, AzureAdCallbackRequestHandler.class);
 
         return Collections.unmodifiableMap(handlers);
     }
