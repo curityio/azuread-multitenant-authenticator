@@ -19,7 +19,7 @@ The plugin has one extra dependency that needs to be installed, `jose4j-0.9.3.ja
 
 To install this plug-in, either download a binary version available from the [releases](https://github.com/curityio/azuread-multitenant-authenticator/releases) section of this project's GitHub repository or compile it from source (as described above).
 
-Copy the JAR and its dependencies[^1] in the directory ``${IDSVR_HOME}/usr/share/plugins/azuread-multitenant`` on each Curity node. (The name of the last directory, ``azuread-multitenant``, which is the plug-in group, is arbitrary and can be anything.) After doing so, the plug-in will become available as soon as the node is restarted.
+Copy the JAR and its dependencies in the directory ``${IDSVR_HOME}/usr/share/plugins/azuread-multitenant`` on each Curity node. (The name of the last directory, ``azuread-multitenant``, which is the plug-in group, is arbitrary and can be anything.) After doing so, the plug-in will become available as soon as the node is restarted.
 
 The `jose4j` JAR can be either copied from  ``${IDSVR_HOME}/lib/`` or you can run `./gradlew copyDependencies` to have it located in the ``build/libs`` directory.
 
