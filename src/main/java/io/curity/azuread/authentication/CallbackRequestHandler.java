@@ -39,9 +39,9 @@ import se.curity.identityserver.sdk.authentication.AuthenticatorRequestHandler;
 import se.curity.identityserver.sdk.errors.ErrorCode;
 import se.curity.identityserver.sdk.http.HttpRequest;
 import se.curity.identityserver.sdk.http.HttpResponse;
-import se.curity.identityserver.sdk.service.ExceptionFactory;
 import org.jose4j.jwt.JwtClaims;
 import se.curity.identityserver.sdk.service.Json;
+import se.curity.identityserver.sdk.service.SessionManager;
 import se.curity.identityserver.sdk.service.WebServiceClientFactory;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorExceptionFactory;
 import se.curity.identityserver.sdk.service.authentication.AuthenticatorInformationProvider;
@@ -86,6 +86,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
     private final AuthenticatorInformationProvider _authenticatorInformationProvider;
     private final WebServiceClientFactory _webServiceClientFactory;
     private final JwtConsumer _noIssuerVerificationJwtConsumer;
+    private final SessionManager _sessionManager;
 
     public CallbackRequestHandler(AzureAdMultitenantAuthenticatorAuthenticatorPluginConfig config)
     {
@@ -94,6 +95,7 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         _json = config.getJson();
         _webServiceClientFactory = config.getWebServiceClientFactory();
         _authenticatorInformationProvider = config.getAuthenticatorInformationProvider();
+        _sessionManager = config.getSessionManager();
         _noIssuerVerificationJwtConsumer = new JwtConsumerBuilder()
                 .setSkipSignatureVerification()
                 .setVerificationKeyResolver(new HttpsJwksVerificationKeyResolver(jwks))
@@ -242,12 +244,16 @@ public final class CallbackRequestHandler implements AuthenticatorRequestHandler
         }
     }
 
-    private static Map<String, String> createPostData(String clientId, String clientSecret, String code, String callbackUri)
+    private Map<String, String> createPostData(String clientId, String clientSecret, String code, String callbackUri)
     {
+        String codeVerifier = _sessionManager.get("code_verifier").getValueOfType(String.class);
+        _sessionManager.remove("code_verifier");
+
         Map<String, String> data = new HashMap<>(5);
 
         data.put("client_id", clientId);
         data.put("client_secret", clientSecret);
+        data.put("code_verifier", codeVerifier);
         data.put("code", code);
         data.put("grant_type", "authorization_code");
         data.put("redirect_uri", callbackUri);
