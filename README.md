@@ -21,14 +21,15 @@ To install this plug-in, either download a binary version available from the [re
 
 Copy the JAR and its dependencies[^1] in the directory ``${IDSVR_HOME}/usr/share/plugins/azuread-multitenant`` on each Curity node. (The name of the last directory, ``azuread-multitenant``, which is the plug-in group, is arbitrary and can be anything.) After doing so, the plug-in will become available as soon as the node is restarted.
 
+The `jose4j` JAR can be either copied from  ``${IDSVR_HOME}/lib/`` or you can run `./gradlew copyDependencies` to have it located in the ``build/libs`` directory.
+
+
 > [!IMPORTANT]
 > The JAR and its dependencies needs to be deployed to each run-time node and the admin node.
 
-[^1]: The `jose4j` JAR can be either copied from  ``${IDSVR_HOME}/lib/`` or you can run `./gradlew copyDependencies` to have it located in the ``build/libs`` directory.
-
 ### Configuration Reference
 
-- allowed-tenant-ids: List of Azure Tenant IDs that are accepted for login[^2] 
+- allowed-tenant-ids: List of Azure Tenant IDs that are accepted for login[^1] 
 - client-id: The OAuth 2 client ID that is registered at the OP
 - client-secret: The OAuth 2 client secret that is registered at the OP
 - clock-skew: The allowed clock-skew in seconds when validating the JWT from the OP
@@ -37,7 +38,7 @@ Copy the JAR and its dependencies[^1] in the directory ``${IDSVR_HOME}/usr/share
 - prompt-login: Setting controlling sending of prompt=login parameter. By default, it is not sent.
 - use-subject-for-login-hint: If enabled and there is a previously authenticated subject, pass the subject as login_hint to the OpenID Server.
 
-[^2]: This option will be replaced with an API call in the next release of the plugin.
+[^1]: This option will be replaced with an API call in the next release of the plugin.
 
 ### License
 
