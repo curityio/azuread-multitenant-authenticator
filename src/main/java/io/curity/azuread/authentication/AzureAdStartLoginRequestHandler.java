@@ -137,7 +137,7 @@ public final class AzureAdStartLoginRequestHandler
         return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
     }
 
-    private String generateCodeVerifier()
+    private static String generateCodeVerifier()
     {
         int codeVerifierLength = 128;
         char[] allAllowed = "abcdefghijklmnopqrstuvwxyzABCDEFGJKLMNPRSTUVWXYZ0123456789.-_~".toCharArray();
