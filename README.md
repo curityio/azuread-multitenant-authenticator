@@ -1,3 +1,6 @@
+[![Quality](https://img.shields.io/badge/quality-test-yellow)](https://curity.io/resources/code-examples/status/)
+[![Availability](https://img.shields.io/badge/availability-source-blue)](https://curity.io/resources/code-examples/status/)
+
 ## Azure Multitenant OIDC Plugin (Entra ID)
 
 This plugin is a variation of the OIDC plugin provided with the Curity Identity Server, allowing to connect with Azure AD with multiple tenants. 
